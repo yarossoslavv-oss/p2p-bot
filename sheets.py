@@ -3,6 +3,8 @@ Google Sheets интеграция.
 Документация: https://docs.gspread.org/
 """
 
+import os
+import json
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -33,7 +35,7 @@ SHEET_HEADERS = [
     "Цена",
     "Опыт",
     "Капитал",
-    "Статус",  # для CRM-расширения (новый/в обработке/оплачен)
+    "Статус",
 ]
 
 
@@ -43,11 +45,24 @@ class GoogleSheetsService:
         self._sheet: gspread.Worksheet | None = None
 
     def _get_client(self) -> gspread.Client:
-        """Ленивая инициализация клиента."""
+        """
+        Ленивая инициализация клиента.
+        Сначала пробует прочитать credentials из переменной окружения
+        GOOGLE_CREDENTIALS_JSON (для Railway), если нет — читает из файла.
+        """
         if self._client is None:
-            creds = Credentials.from_service_account_file(
-                GOOGLE_CREDENTIALS_FILE, scopes=SCOPES
-            )
+            credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+            if credentials_json:
+                # Railway: читаем из переменной окружения
+                info = json.loads(credentials_json)
+                creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+                logger.info("Google Sheets: credentials загружены из переменной окружения")
+            else:
+                # Локально: читаем из файла credentials.json
+                creds = Credentials.from_service_account_file(
+                    GOOGLE_CREDENTIALS_FILE, scopes=SCOPES
+                )
+                logger.info("Google Sheets: credentials загружены из файла")
             self._client = gspread.authorize(creds)
             logger.info("Google Sheets клиент инициализирован")
         return self._client
@@ -62,7 +77,6 @@ class GoogleSheetsService:
                 self._sheet = spreadsheet.worksheet(GOOGLE_SHEET_NAME)
                 logger.info(f"Открыт лист: {GOOGLE_SHEET_NAME}")
             except gspread.WorksheetNotFound:
-                # Создаём лист с заголовками если не существует
                 self._sheet = spreadsheet.add_worksheet(
                     title=GOOGLE_SHEET_NAME, rows=1000, cols=20
                 )
@@ -72,20 +86,7 @@ class GoogleSheetsService:
         return self._sheet
 
     async def save_application(self, data: dict) -> bool:
-        """
-        Сохранить заявку в Google Sheets.
-
-        data = {
-            "name": str,
-            "telegram_id": int,
-            "username": str,
-            "tariff_id": str,
-            "tariff_name": str,
-            "tariff_price": str,
-            "experience": str,
-            "capital": str,
-        }
-        """
+        """Сохранить заявку в Google Sheets."""
         try:
             tz = pytz.timezone(TIMEZONE)
             now = datetime.now(tz).strftime("%d.%m.%Y %H:%M")
@@ -99,7 +100,7 @@ class GoogleSheetsService:
                 data.get("tariff_price", ""),
                 data.get("experience", ""),
                 data.get("capital", ""),
-                "Новый",  # начальный статус
+                "Новый",
             ]
 
             sheet = self._get_sheet()
