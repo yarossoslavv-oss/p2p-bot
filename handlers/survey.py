@@ -231,3 +231,4 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext, bot: Bot) -> N
         f"tariff={tariff_name} "
         f"sheets={'ok' if sheets_ok else 'FAIL'}"
     )
+
